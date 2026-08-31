@@ -19,6 +19,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-22.04
+    timeout-minutes: 355  # 给 GitHub hosted runner 的 6 小时硬限制保留退出余量
     environment: AutoRead  # 指定环境
 
     steps:
@@ -29,10 +30,10 @@ jobs:
         echo "nameserver 8.8.4.4" | sudo tee -a /etc/resolv.conf
 
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v7
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v7
       with:
         python-version: '3.10'
 
@@ -49,8 +50,9 @@ jobs:
         WXPUSHER_SPT: ${{ secrets.WXPUSHER_SPT }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        SERVERCHAN_SPT:  ${{ secrets.SERVERCHAN_SPT }}
-        READ_NUM: ${{ vars.READ_NUM }}  # 使用 Repository Variables
+        SERVERCHAN_SPT: ${{ secrets.SERVERCHAN_SPT }}
+        READ_NUM: ${{ vars.READ_NUM }}  # Repository Variable；为空时 config.py 默认 40
+        MAX_READ_NUM: '640'             # Actions 安全上限；700 会逼近/超过 6 小时
 
       run: |
         python main.py
