@@ -1,29 +1,29 @@
 name: wxread
+run-name: wxread auto-read | ${{ github.event_name }} | ${{ github.ref_name }}
 
 concurrency:
-  group: ${{ github.workflow }} # 使用工作流名称作为并发组的key
-  cancel-in-progress: true    # 取消任何正在进行的相同并发组的工作流
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 on:
   schedule:
-    # 凌晨任务：北京时间每天 01:00（UTC 前一天 17:00）
+    # 北京时间每天 01:00（UTC 前一天 17:00）
     - cron: '0 17 * * *'
-    # 早间任务：北京时间每天 05:00（UTC 前一天 21:00）
-    #- cron: '0 21 * * *'
-    # 午间任务：北京时间每天 11:40（UTC 03:40）
-    #- cron: '40 3 * * *'
-    # 晚间任务：北京时间每天 22:00（UTC 14:00）
-    #- cron: '0 14 * * *'
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
+    inputs:
+      read_num:
+        description: '本次阅读次数；留空则使用 Repository Variable READ_NUM'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   deploy:
     runs-on: ubuntu-22.04
-    timeout-minutes: 355  # 给 GitHub hosted runner 的 6 小时硬限制保留退出余量
-    environment: AutoRead  # 指定环境
+    timeout-minutes: 358
+    environment: AutoRead
 
     steps:
-
     - name: Set DNS to Google's DNS
       run: |
         echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
@@ -42,7 +42,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install certifi==2024.8.30 charset-normalizer==3.4.0 idna==3.10 requests==2.32.3 urllib3==2.2.3
 
-    - name: Run deployment script
+    - name: Validate Python files
+      run: |
+        python -m py_compile main.py config.py push.py log_utils.py
+
+    - name: Run auto-read task
       env:
         WXREAD_CURL_BASH: ${{ secrets.WXREAD_CURL_BASH }}
         PUSH_METHOD: ${{ secrets.PUSH_METHOD }}
@@ -51,9 +55,9 @@ jobs:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         SERVERCHAN_SPT: ${{ secrets.SERVERCHAN_SPT }}
-        READ_NUM: ${{ vars.READ_NUM }}  # Repository Variable；为空时 config.py 默认 40
-        MAX_READ_NUM: '640'             # Actions 安全上限；700 会逼近/超过 6 小时
-
+        READ_NUM: ${{ github.event.inputs.read_num || vars.READ_NUM }}
+        # 700 次 = 350 分钟。main.py 采用固定 30 秒请求周期，避免网络耗时叠加后撞 6 小时限制。
+        MAX_READ_NUM: '700'
       run: |
         python main.py
 
