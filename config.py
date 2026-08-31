@@ -7,8 +7,20 @@ import re
 默认使用本地值如果不存在从环境变量中获取值
 """
 
-# 阅读次数 默认40次/20分钟
-READ_NUM = int(os.getenv('READ_NUM') or 40)
+# 阅读次数 默认40次/20分钟。
+# GitHub Actions 可通过 MAX_READ_NUM 设置安全上限，避免任务逼近 hosted runner 的 6 小时硬限制。
+_requested_read_num = int(os.getenv('READ_NUM') or 40)
+_max_read_num = os.getenv('MAX_READ_NUM')
+if _requested_read_num <= 0:
+    raise ValueError('READ_NUM 必须为正整数')
+if _max_read_num:
+    _max_read_num = int(_max_read_num)
+    if _max_read_num <= 0:
+        raise ValueError('MAX_READ_NUM 必须为正整数')
+    READ_NUM = min(_requested_read_num, _max_read_num)
+else:
+    READ_NUM = _requested_read_num
+
 # 需要推送时可选，可选pushplus、wxpusher、telegram
 PUSH_METHOD = "" or os.getenv('PUSH_METHOD')
 # pushplus推送时需填
@@ -92,24 +104,24 @@ def convert(curl_command):
 
     # 提取 cookies
     cookies = {}
-    
+
     # 从 -H 'Cookie: xxx' 提取
-    cookie_header = next((v for k, v in headers_temp.items() 
+    cookie_header = next((v for k, v in headers_temp.items()
                          if k.lower() == 'cookie'), '')
-    
+
     # 从 -b 'xxx' 提取
     cookie_b = re.search(r"-b '([^']+)'", curl_command)
     cookie_string = cookie_b.group(1) if cookie_b else cookie_header
-    
+
     # 解析 cookie 字符串
     if cookie_string:
         for cookie in cookie_string.split('; '):
             if '=' in cookie:
                 key, value = cookie.split('=', 1)
                 cookies[key.strip()] = value.strip()
-    
+
     # 移除 headers 中的 Cookie/cookie
-    headers = {k: v for k, v in headers_temp.items() 
+    headers = {k: v for k, v in headers_temp.items()
               if k.lower() != 'cookie'}
 
     return headers, cookies
