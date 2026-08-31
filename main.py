@@ -27,6 +27,7 @@ COOKIE_DATA_VARIANTS = [
 REQUEST_TIMEOUT = (10, 30)
 READ_REQUEST_ATTEMPTS = 5
 READ_RETRY_DELAYS = (2, 4, 8, 16)
+READ_INTERVAL_SECONDS = 30
 
 refresh_print = setup_logging()
 
@@ -127,9 +128,7 @@ def post_json_with_retry(url, **kwargs):
             response.raise_for_status()
 
             if not response.content or not response.text.strip():
-                raise ValueError(
-                    f"服务器返回空响应，HTTP {response.status_code}"
-                )
+                raise ValueError(f"服务器返回空响应，HTTP {response.status_code}")
 
             try:
                 return response.json()
@@ -179,7 +178,7 @@ def read_once():
 
     try:
         return post_json_with_retry(READ_URL, **request_kwargs)
-    except ReadRequestError as first_error:
+    except ReadRequestError:
         logging.warning("阅读接口持续异常，尝试刷新 cookie 后恢复当前阅读请求。")
         refresh_cookie()
         try:
@@ -190,14 +189,30 @@ def read_once():
             ) from second_error
 
 
+def wait_for_next_read(cycle_started):
+    """让两次正常阅读请求的起点保持约 30 秒间隔，而不是“请求耗时 + 30 秒”。"""
+    elapsed = time.monotonic() - cycle_started
+    sleep_seconds = max(0.0, READ_INTERVAL_SECONDS - elapsed)
+    if sleep_seconds > 0:
+        time.sleep(sleep_seconds)
+
+
 def run():
     """执行完整阅读流程。"""
     refresh_cookie()
     index = 1
-    last_time = int(time.time()) - 30
-    logging.info("一共需要阅读 %d 次。", READ_NUM)
+    last_time = int(time.time()) - READ_INTERVAL_SECONDS
+    target_minutes = READ_NUM * 0.5
+
+    logging.info(
+        "阅读目标：%d 次，约 %.1f 分钟；正常请求间隔 %d 秒。",
+        READ_NUM,
+        target_minutes,
+        READ_INTERVAL_SECONDS,
+    )
 
     while index <= READ_NUM:
+        cycle_started = time.monotonic()
         data.pop("s", None)
         data["b"] = random.choice(book)
         data["c"] = random.choice(chapter)
@@ -220,7 +235,7 @@ def run():
         res_data = read_once()
         logging.debug("response: %s", res_data)
 
-        if "succ" in res_data:
+        if res_data.get("succ") == 1:
             if "synckey" in res_data:
                 last_time = this_time
                 index += 1
@@ -230,24 +245,31 @@ def run():
                     f"已完成 {(index - 1) * 0.5:.1f} 分钟"
                 )
 
-                # 最后一次完成后无需再等待 30 秒，给 GitHub Actions 留出退出余量。
+                # 关键：把网络请求耗时包含在 30 秒周期内。
+                # 700 次因此约 350 分钟，而不是 700 * (30 秒 + 请求耗时)。
                 if index <= READ_NUM:
-                    time.sleep(30)
+                    wait_for_next_read(cycle_started)
             else:
-                logging.warning("无 synckey，尝试修复...")
+                logging.warning("成功响应中无 synckey，尝试修复...")
                 if not fix_no_synckey():
                     logging.warning("synckey 修复失败，刷新 cookie 后重试当前阅读。")
                     refresh_cookie()
         else:
-            logging.warning("cookie 已过期或接口返回失败状态，尝试刷新...")
+            logging.warning(
+                "接口返回失败状态：succ=%r, errCode=%r, errMsg=%r；尝试刷新 cookie。",
+                res_data.get("succ"),
+                res_data.get("errCode"),
+                res_data.get("errMsg") or res_data.get("message"),
+            )
             refresh_cookie()
 
-    logging.info("阅读脚本已完成。")
+    completed_minutes = (index - 1) * 0.5
+    logging.info("阅读脚本已完成：%d 次，%.1f 分钟。", index - 1, completed_minutes)
 
     if PUSH_METHOD not in (None, ""):
         logging.info("开始推送...")
         push(
-            f"微信读书自动阅读完成。\n阅读时长：{(index - 1) * 0.5} 分钟。",
+            f"微信读书自动阅读完成。\n阅读时长：{completed_minutes:.1f} 分钟。",
             PUSH_METHOD,
             is_success=True,
         )
