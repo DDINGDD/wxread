@@ -6,9 +6,6 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  schedule:
-    # 北京时间每天 01:17（UTC 前一天 17:17）；避开整点调度高峰
-    - cron: '17 17 * * *'
   workflow_dispatch:
     inputs:
       read_num:
@@ -61,12 +58,3 @@ jobs:
       run: |
         python main.py
 
-  keepalive-job:
-    name: Keepalive Workflow
-    if: ${{ always() }}
-    needs: deploy
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    steps:
-      - uses: liskin/gh-workflow-keepalive@v1.2.1
