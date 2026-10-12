@@ -7,9 +7,8 @@ concurrency:
 
 on:
   schedule:
-    # 北京时间每天 01:17；避开整点调度高峰，降低 GitHub Actions 延迟概率
-    - cron: '17 1 * * *'
-      timezone: 'Asia/Shanghai'
+    # 北京时间每天 01:17（UTC 前一天 17:17）；避开整点调度高峰
+    - cron: '17 17 * * *'
   workflow_dispatch:
     inputs:
       read_num:
